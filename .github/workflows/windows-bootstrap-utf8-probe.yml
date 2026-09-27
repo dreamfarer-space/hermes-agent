@@ -1,0 +1,38 @@
+name: Windows bootstrap UTF-8 regression
+on:
+  push:
+    branches: [test/windows-bootstrap-utf8]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 2
+          sparse-checkout: |
+            scripts/install.ps1
+            scripts/tests/test-install-ps1-utf8.ps1
+          sparse-checkout-cone-mode: false
+      - name: Verify regression fails on base and passes with fix
+        shell: pwsh
+        env:
+          TEST_SHELL: ${{ matrix.shell }}
+        run: |
+          $fixed = [IO.File]::ReadAllBytes('scripts/install.ps1')
+          try {
+            $base = git show 'e9c60209a786891bb56dfbd7a5151d6cdda7ac0e:scripts/install.ps1'
+            [IO.File]::WriteAllText((Join-Path $PWD 'scripts/install.ps1'), ($base -join "`n"), [Text.UTF8Encoding]::new($false))
+            & $env:TEST_SHELL -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-utf8.ps1
+            if ($LASTEXITCODE -eq 0) { throw 'Regression unexpectedly passed on base' }
+            Write-Host 'Base failed as expected'
+          } finally {
+            [IO.File]::WriteAllBytes((Join-Path $PWD 'scripts/install.ps1'), $fixed)
+          }
+          & $env:TEST_SHELL -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-utf8.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Fixed regression failed' }
