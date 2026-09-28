@@ -17,22 +17,24 @@ jobs:
           fetch-depth: 2
           sparse-checkout: |
             scripts/install.ps1
+            setup-hermes.ps1
             scripts/tests/test-install-ps1-utf8.ps1
           sparse-checkout-cone-mode: false
-      - name: Verify regression fails on base and passes with fix
+      - name: Verify setup regression fails on base and both entries pass with fix
         shell: pwsh
         env:
           TEST_SHELL: ${{ matrix.shell }}
         run: |
-          $fixed = [IO.File]::ReadAllBytes('scripts/install.ps1')
+          $fixed = [IO.File]::ReadAllBytes('setup-hermes.ps1')
           try {
-            $base = git show 'e9c60209a786891bb56dfbd7a5151d6cdda7ac0e:scripts/install.ps1'
-            [IO.File]::WriteAllText((Join-Path $PWD 'scripts/install.ps1'), ($base -join "`n"), [Text.UTF8Encoding]::new($false))
+            $base = git show '237e70524d285b9718202592a61f2a8665cb8786:setup-hermes.ps1'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not read baseline setup' }
+            [IO.File]::WriteAllText((Join-Path $PWD 'setup-hermes.ps1'), ($base -join "`n"), [Text.UTF8Encoding]::new($false))
             & $env:TEST_SHELL -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-utf8.ps1
             if ($LASTEXITCODE -eq 0) { throw 'Regression unexpectedly passed on base' }
-            Write-Host 'Base failed as expected'
+            Write-Host 'Base setup failed as expected'
           } finally {
-            [IO.File]::WriteAllBytes((Join-Path $PWD 'scripts/install.ps1'), $fixed)
+            [IO.File]::WriteAllBytes((Join-Path $PWD 'setup-hermes.ps1'), $fixed)
           }
           & $env:TEST_SHELL -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-utf8.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Fixed regression failed' }
