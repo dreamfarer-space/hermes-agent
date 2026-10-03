@@ -1,0 +1,56 @@
+name: Windows bootstrap hidden-host regression
+on:
+  push:
+    branches: [test/windows-bootstrap-hidden-host-20261004]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+        source: [pr-head, current-upstream]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: |
+            scripts/install.ps1
+            setup-hermes.ps1
+            scripts/tests/test-install-ps1-utf8.ps1
+            .github/probes/utf8-hidden
+          sparse-checkout-cone-mode: false
+      - name: Verify hidden setup fails on upstream and both hosts pass with fix
+        shell: pwsh
+        env:
+          TEST_SHELL: ${{ matrix.shell }}
+          TEST_SOURCE: ${{ matrix.source }}
+        run: |
+          if ($env:TEST_SOURCE -eq 'current-upstream') {
+            Copy-Item .github/probes/utf8-hidden/install.ps1 scripts/install.ps1
+            Copy-Item .github/probes/utf8-hidden/setup-hermes.ps1 setup-hermes.ps1
+          }
+          Write-Host "Testing $env:TEST_SOURCE with $env:TEST_SHELL (upstream snapshot 5d3c059)"
+          $fixed = [IO.File]::ReadAllBytes('setup-hermes.ps1')
+          try {
+            Copy-Item .github/probes/utf8-hidden/unfixed-setup.ps1 setup-hermes.ps1
+            $redLog = Join-Path $env:RUNNER_TEMP 'utf8-hidden-before.log'
+            & $env:TEST_SHELL -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-utf8.ps1 *> $redLog
+            $redExit = $LASTEXITCODE
+            $red = Get-Content -Raw $redLog
+            Write-Host $red
+            if ($redExit -eq 0) { throw 'Regression unexpectedly passed with unfixed setup' }
+            if ($red -notmatch 'Hidden host boundary verified:' -or
+                $red -notmatch 'hidden PowerShell regression failed:' -or
+                $red -notmatch 'setup-hermes.ps1' -or
+                $red -notmatch '(CommandNotFoundException|is not recognized)') {
+              throw 'Baseline failure did not prove the hidden Unicode setup regression'
+            }
+            Write-Host 'Unfixed setup failed inside a verified hidden PowerShell host as expected.'
+          } finally {
+            [IO.File]::WriteAllBytes((Join-Path $PWD 'setup-hermes.ps1'), $fixed)
+          }
+          & $env:TEST_SHELL -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-utf8.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Fixed regression failed' }
